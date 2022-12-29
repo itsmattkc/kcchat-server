@@ -1,0 +1,17 @@
+{
+  "db_host":"localhost",
+  "db_port":"3306",
+  "db_user":"root",
+  "db_pass":"",
+  "db_name":"kcchat",
+  "bot_name":"Bot",
+  "bot_color":"FFFFFF",
+  "ssl_key":"",
+  "ssl_crt":"",
+  "ssl_ca":"",
+  "paypal_live":false,
+  "paypal_client_id":"",
+  "paypal_client_secret":"",
+  "youtube_client_id":"",
+  "youtube_client_secret":""
+}

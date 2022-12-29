@@ -1,0 +1,38 @@
+name: CI
+
+on: push
+
+env:
+  DOWNLOAD_TOOL: curl -fLOSs --retry 2 --retry-delay 60
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-20.04
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt -y update
+          sudo apt -y upgrade
+          sudo apt -y install qtbase5-dev libqt5websockets5-dev ninja-build
+
+      - name: Build
+        working-directory: ${{ runner.workspace }}
+        run: |
+          mkdir build
+          cd build
+          cmake "$GITHUB_WORKSPACE" -G Ninja -DCMAKE_BUILD_TYPE=Release
+          ninja
+
+      - name: Upload Artifact to GitHub
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.os }}
+          path: ${{ runner.workspace }}/build/kcbot
