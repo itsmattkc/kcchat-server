@@ -148,6 +148,16 @@ QString ChatServer::getStatusString(Status s)
 void ChatServer::publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Request::Authorization auth)
 {
   // Trim string and check for empty. Client will have done this, but we can't trust it.
+  msg = msg.replace(QRegExp(QStringLiteral("["
+                                             "\\xAD\\xA0\\x09\\x34F\\x61C\\x115F"
+                                             "\\x1160\\x17B4\\x17B5\\x180E"
+                                             "\\x2000-\\x200F"
+                                             "\\x202F\\x205F"
+                                             "\\x2060-\\x2064"
+                                             "\\x206A-\\x206F"
+                                             "\\x3000"
+                                             "\\x2800\\x3164\\xFEFF\\xFFA0"
+                                           "]")), QStringLiteral(" "));
   msg = msg.trimmed();
   if (msg.isEmpty() || msg.size() > CONFIG[QStringLiteral("max_chat_length")].toInt()) {
     return;
