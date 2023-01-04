@@ -401,6 +401,10 @@ ChatServer::Response ChatServer::setUserAuthLevelCommand(const Request &r, Reque
     if (modQuery.numRowsAffected() == 0) {
       return Response(r, tr("Failed to find user '%1'").arg(userToMod));
     } else {
+      auto skts = m_clients.socketsForAuthor(userToMod.toLongLong());
+      for (auto skt : skts) {
+        skt->sendTextMessage(generateAuthLevelPacket(auth).toJson());
+      }
       return Response(r, tr("%1 auth level set to %2 successfully").arg(r.command(), auth));
     }
   } else {
@@ -504,6 +508,13 @@ QJsonDocument ChatServer::generateJoinPacket(const QString &name)
   return generateClientPacket(QStringLiteral("join"), d);
 }
 
+QJsonDocument ChatServer::generateAuthLevelPacket(Request::Authorization auth)
+{
+  QJsonObject o;
+  o.insert(QStringLiteral("value"), auth);
+  return generateClientPacket(QStringLiteral("authlevel"), o);
+}
+
 void ChatServer::handleNewConnection()
 {
   QWebSocket *skt = m_server->nextPendingConnection();
@@ -529,15 +540,35 @@ void ChatServer::processClientMessage(const QString &s)
 
   // Ignore packet if sent too recently to last packet (attempt to mitigate DDoS)
   {
-    qint64 lastClientAccess = client->property("access").toLongLong();
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
-    const qint64 minDelay = 50;
-    if (lastClientAccess > now - minDelay) {
-      return;
+    //
+    // Enforce no more than 10 requests per second
+    //
+    const qint64 MAX_REQUEST_COUNT = 10;
+    const qint64 MAX_REQUEST_INTERVAL = 1000;
+
+    // Get access record
+    std::list<qint64> accessRecord = client->property("access").value< std::list<qint64> >();
+
+    // Push back now time
+    accessRecord.push_back(QDateTime::currentMSecsSinceEpoch());
+
+    // Keep list 10 elements long
+    if (accessRecord.size() > MAX_REQUEST_COUNT) {
+      accessRecord.pop_front();
     }
 
-    // Update access time
-    client->setProperty("access", now);
+    // Store access history in socket
+    client->setProperty("access", QVariant::fromValue(accessRecord));
+
+    // If we have the maximum number of requests, make sure they happened in longer than the max
+    // interval for that amount of requests
+    if (accessRecord.size() == MAX_REQUEST_COUNT) {
+      qint64 diff = accessRecord.back() - accessRecord.front();
+      if (diff < MAX_REQUEST_INTERVAL) {
+        // Too many requests per second. Discard.
+        return;
+      }
+    }
   }
 
   QJsonDocument json = QJsonDocument::fromJson(s.toUtf8());
@@ -579,6 +610,20 @@ void ChatServer::processClientMessage(const QString &s)
   youtube_lookupUser(client, token, [this, type, client, data](qint64 id){
     if (type == QStringLiteral("status")) {
       sendUserState(client, id);
+
+      {
+        // Send user auth level
+        QSqlQuery authLevelQuery(m_db);
+        authLevelQuery.prepare(QStringLiteral("SELECT auth_level FROM users WHERE id = ?"));
+        authLevelQuery.addBindValue(id);
+        if (!authLevelQuery.exec()) {
+          qCritical() << "Failed to get auth_level" << authLevelQuery.lastError();
+        } else if (!authLevelQuery.next()) {
+          qCritical() << "Failed to get auth_level, user" << id << "didn't exist";
+        } else {
+          client->sendTextMessage(generateAuthLevelPacket(static_cast<Request::Authorization>(authLevelQuery.value(QStringLiteral("auth_level")).toInt())).toJson());
+        }
+      }
     } else if (type == QStringLiteral("getuserconf")) {
       processGetUserConfig(client, id);
     } else if (type == QStringLiteral("setuserconf")) {

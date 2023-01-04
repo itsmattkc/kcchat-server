@@ -229,6 +229,7 @@ private:
   void removeSocket(QWebSocket *skt);
 
   QJsonDocument generateJoinPacket(const QString &name);
+  QJsonDocument generateAuthLevelPacket(Request::Authorization auth);
 
   QMap<QString, CommandHandler> m_commandMap;
   QMap<QString, QString> m_simpleResponses;
