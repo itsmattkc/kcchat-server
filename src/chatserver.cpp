@@ -1,5 +1,6 @@
 #include "chatserver.h"
 
+#include "auth/googleauth.h"
 #include "startupconfig.h"
 
 static const QString SQL_CONNECTION_NAME = QStringLiteral("kcchat");
@@ -8,10 +9,13 @@ ChatServer::ChatServer(QObject *parent) :
   QObject{parent},
   m_slowMode(0),
   m_duplicateSlowMode(30),          // 30 seconds
-  m_displayNameChangeTime(2592000)  // 30 days
+  m_displayNameChangeTime(2592000), // 30 days
+  m_followMode(600)                 // 10 minutes
 {
   m_netMan = new QNetworkAccessManager(this);
   connect(m_netMan, &QNetworkAccessManager::finished, this, &ChatServer::checkApiError);
+
+  m_authModules.append(new GoogleAuth(this));
 
   initCommands();
 }
@@ -73,7 +77,7 @@ void ChatServer::reply(const Response &r)
       if (req.hasAuthor()) {
         s.prepend(QStringLiteral("@%1 ").arg(req.author()));
       }
-      publish(CONFIG[QStringLiteral("bot_name")].toString(), 0, s, CONFIG[QStringLiteral("bot_color")].toString(), QHostAddress::LocalHost, Request::AUTH_MOD);
+      publish(CONFIG[QStringLiteral("bot_name")].toString(), 0, s, CONFIG[QStringLiteral("bot_color")].toString(), QHostAddress::LocalHost, Authorization::AUTH_MOD);
     } else {
       // Send status message
       const QList<QWebSocket*> skts = m_clients.socketsForAuthor(req.authorId());
@@ -145,7 +149,7 @@ QString ChatServer::getStatusString(Status s)
   return QString();
 }
 
-void ChatServer::publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Request::Authorization auth)
+void ChatServer::publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Authorization auth)
 {
   // Trim string and check for empty. Client will have done this, but we can't trust it.
   msg = msg.replace(QRegExp(QStringLiteral("["
@@ -320,7 +324,7 @@ ChatServer::Response ChatServer::ban(const Request &r, bool andIP)
     userUpdate.addBindValue(now);
     userUpdate.addBindValue(banEnd);
     userUpdate.addBindValue(bannedUser);
-    userUpdate.addBindValue(Request::AUTH_ADMIN);
+    userUpdate.addBindValue(int(Authorization::AUTH_ADMIN));
     userUpdate.addBindValue(bannedUser);
 
     if (!userUpdate.exec()) {
@@ -392,16 +396,16 @@ ChatServer::Response ChatServer::ban(const Request &r, bool andIP)
   }
 }
 
-ChatServer::Response ChatServer::setUserAuthLevelCommand(const Request &r, Request::Authorization auth)
+ChatServer::Response ChatServer::setUserAuthLevelCommand(const Request &r, Authorization auth)
 {
   if (r.args().size() == 2) {
     QString userToMod = stripAtSymbols(r.args().at(1));
 
     QSqlQuery modQuery(m_db);
     modQuery.prepare(QStringLiteral("UPDATE users SET auth_level = ? WHERE display_name = ? AND auth_level != ?"));
-    modQuery.addBindValue(auth);
+    modQuery.addBindValue(int(auth));
     modQuery.addBindValue(userToMod);
-    modQuery.addBindValue(Request::AUTH_ADMIN);
+    modQuery.addBindValue(int(Authorization::AUTH_ADMIN));
 
     if (!modQuery.exec()) {
       qCritical() << "Failed to set auth level:" << modQuery.lastError();
@@ -415,7 +419,7 @@ ChatServer::Response ChatServer::setUserAuthLevelCommand(const Request &r, Reque
       for (auto skt : skts) {
         skt->sendTextMessage(generateAuthLevelPacket(auth).toJson());
       }
-      return Response(r, tr("%1 auth level set to %2 successfully").arg(r.command(), auth));
+      return Response(r, tr("%1 auth level set to %2 successfully").arg(r.command(), QString::number(int(auth))));
     }
   } else {
     return Response(r, tr("Usage: %1 <username>").arg(r.command()));
@@ -467,7 +471,7 @@ QString ChatServer::stripAtSymbols(QString name)
   return name;
 }
 
-QJsonDocument ChatServer::generateChatMessageForClient(qint64 msgId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Request::Authorization auth)
+QJsonDocument ChatServer::generateChatMessageForClient(qint64 msgId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth)
 {
   // Escape HTML
   msg = msg.toHtmlEscaped();
@@ -478,9 +482,9 @@ QJsonDocument ChatServer::generateChatMessageForClient(qint64 msgId, const QStri
   data.insert(QStringLiteral("author"), author);
   data.insert(QStringLiteral("author_id"), authorId);
   data.insert(QStringLiteral("author_color"), authorColor);
-  data.insert(QStringLiteral("author_level"), auth);
+  data.insert(QStringLiteral("author_level"), int(auth));
   data.insert(QStringLiteral("message"), msg);
-  data.insert(QStringLiteral("auth"), auth);
+  data.insert(QStringLiteral("auth"), int(auth));
 
   return generateClientPacket(QStringLiteral("chat"), data);
 }
@@ -518,11 +522,22 @@ QJsonDocument ChatServer::generateJoinPacket(const QString &name)
   return generateClientPacket(QStringLiteral("join"), d);
 }
 
-QJsonDocument ChatServer::generateAuthLevelPacket(Request::Authorization auth)
+QJsonDocument ChatServer::generateAuthLevelPacket(Authorization auth)
 {
   QJsonObject o;
-  o.insert(QStringLiteral("value"), auth);
+  o.insert(QStringLiteral("value"), int(auth));
   return generateClientPacket(QStringLiteral("authlevel"), o);
+}
+
+AuthModule *ChatServer::getAuthModuleById(const QString &id) const
+{
+  for (AuthModule *a : m_authModules) {
+    if (a->id() == id) {
+      return a;
+    }
+  }
+
+  return nullptr;
 }
 
 void ChatServer::handleNewConnection()
@@ -542,6 +557,40 @@ void ChatServer::clientDisconnected()
   // FIXME: Not deleting may be a memory leak, but some event-based functions continue to refer to
   //        sockets that may get deleted between callbacks.
   //s->deleteLater();
+}
+
+void ChatServer::processAuthenticatedMessage(QWebSocket *client, const QString &type, const QJsonValue &data, qint64 id)
+{
+  if (type == QStringLiteral("status")) {
+    sendUserState(client, id);
+
+    {
+      // Send user auth level
+      QSqlQuery authLevelQuery(m_db);
+      authLevelQuery.prepare(QStringLiteral("SELECT auth_level FROM users WHERE id = ?"));
+      authLevelQuery.addBindValue(id);
+      if (!authLevelQuery.exec()) {
+        qCritical() << "Failed to get auth_level" << authLevelQuery.lastError();
+      } else if (!authLevelQuery.next()) {
+        qCritical() << "Failed to get auth_level, user" << id << "didn't exist";
+      } else {
+        client->sendTextMessage(generateAuthLevelPacket(static_cast<Authorization>(authLevelQuery.value(QStringLiteral("auth_level")).toInt())).toJson());
+      }
+    }
+  } else if (type == QStringLiteral("getuserconf")) {
+    processGetUserConfig(client, id);
+  } else if (type == QStringLiteral("setuserconf")) {
+    processSetUserConfig(client, id, data);
+  } else if (type == QStringLiteral("message")) {
+    processChatMessage(client, id, data);
+  } else if (type == QStringLiteral("paypal")) {
+    processPayPal(id, data);
+  }
+}
+
+void ChatServer::handleAuthFailure(QWebSocket *client)
+{
+  sendUserStatusMessage(client, STATUS_UNAUTHENTICATED);
 }
 
 void ChatServer::processClientMessage(const QString &s)
@@ -612,45 +661,26 @@ void ChatServer::processClientMessage(const QString &s)
 
   // Ensure token is valid
   QString token = json.object().value(QStringLiteral("token")).toString();
-  if (token.isEmpty()) {
+  QString authType = json.object().value(QStringLiteral("auth")).toString();
+  if (token.isEmpty() || authType.isEmpty()) {
     sendUserStatusMessage(client, STATUS_UNAUTHENTICATED);
     return;
   }
 
-  youtube_lookupUser(client, token, [this, type, client, data](qint64 id){
-    if (type == QStringLiteral("status")) {
-      sendUserState(client, id);
-
-      {
-        // Send user auth level
-        QSqlQuery authLevelQuery(m_db);
-        authLevelQuery.prepare(QStringLiteral("SELECT auth_level FROM users WHERE id = ?"));
-        authLevelQuery.addBindValue(id);
-        if (!authLevelQuery.exec()) {
-          qCritical() << "Failed to get auth_level" << authLevelQuery.lastError();
-        } else if (!authLevelQuery.next()) {
-          qCritical() << "Failed to get auth_level, user" << id << "didn't exist";
-        } else {
-          client->sendTextMessage(generateAuthLevelPacket(static_cast<Request::Authorization>(authLevelQuery.value(QStringLiteral("auth_level")).toInt())).toJson());
-        }
-      }
-    } else if (type == QStringLiteral("getuserconf")) {
-      processGetUserConfig(client, id);
-    } else if (type == QStringLiteral("setuserconf")) {
-      processSetUserConfig(client, id, data);
-    } else if (type == QStringLiteral("message")) {
-      processChatMessage(client, id, data);
-    } else if (type == QStringLiteral("paypal")) {
-      processPayPal(id, data);
-    }
-  });
+  if (AuthModule *a = getAuthModuleById(authType)) {
+    a->authenticate(m_db, token, std::bind(&ChatServer::processAuthenticatedMessage, this, client, type, data, std::placeholders::_1), std::bind(&ChatServer::handleAuthFailure, this, client));
+  } else {
+    // Don't know how to handle this auth service
+    sendUserStatusMessage(client, STATUS_UNAUTHENTICATED);
+    return;
+  }
 }
 
 void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const QJsonValue &data)
 {
   QString author, lastMessage, color;
-  qint64 lastMessageTime, bannedUntil;
-  Request::Authorization auth = Request::AUTH_USER;
+  qint64 lastMessageTime, bannedUntil, createdAt;
+  Authorization auth = Authorization::AUTH_USER;
 
   // Using the user ID, try loading the user's details
   {
@@ -671,8 +701,9 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
     lastMessage = userLookupQuery.value(QStringLiteral("last_message")).toString();
     lastMessageTime = userLookupQuery.value(QStringLiteral("last_message_time")).toLongLong();
     bannedUntil = userLookupQuery.value(QStringLiteral("banned_until")).toLongLong();
-    auth = static_cast<Request::Authorization>(userLookupQuery.value(QStringLiteral("auth_level")).toInt());
+    auth = static_cast<Authorization>(userLookupQuery.value(QStringLiteral("auth_level")).toInt());
     color = userLookupQuery.value(QStringLiteral("display_color")).toString();
+    createdAt = userLookupQuery.value(QStringLiteral("created_at")).toLongLong();
   }
 
   // Get time now
@@ -751,11 +782,20 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
   }
 
   if (!response.isValid()) {
-    // If this is not a bot message, and it's a duplicate, reject it
+    // If this is not a bot message, and it's a duplicate that happened too quickly, reject it
     if (m_duplicateSlowMode > 0 && msg == lastMessage) {
       qint64 slowModeDelta = lastMessageTime + m_duplicateSlowMode - now;
       if (slowModeDelta > 0) {
         sendServerMessage(client, tr("Your identical message was sent too quickly, please wait %1 seconds to send it again.").arg(slowModeDelta));
+        return;
+      }
+    }
+
+    // Check if user is allowed to speak yet
+    if (m_followMode > 0) {
+      qint64 followDelta = now - createdAt + m_followMode;
+      if (followDelta < 0) {
+        sendServerMessage(client, tr("Your account must be at least %1 seconds old to message here. Please wait another %2 seconds.").arg(QString::number(m_followMode), QString::number(-followDelta)));
         return;
       }
     }
@@ -911,7 +951,7 @@ void ChatServer::processHello(QWebSocket *client, const QJsonValue &data)
     QString authorColor;
     QString message;
     qint64 messageId;
-    Request::Authorization auth;
+    Authorization auth;
   };
 
   std::list<Msg> msgs;
@@ -939,7 +979,7 @@ void ChatServer::processHello(QWebSocket *client, const QJsonValue &data)
 
       m.author = authorQuery.value(QStringLiteral("display_name")).toString();
       m.authorColor = authorQuery.value(QStringLiteral("display_color")).toString();
-      m.auth = static_cast<Request::Authorization>(authorQuery.value(QStringLiteral("auth_level")).toInt());
+      m.auth = static_cast<Authorization>(authorQuery.value(QStringLiteral("auth_level")).toInt());
     }
 
     m.messageId = historyQuery.value(QStringLiteral("id")).toLongLong();
@@ -1120,6 +1160,7 @@ void ChatServer::handlePeerVerifyError(const QSslError &err)
   qCritical() << "Peer verify error:" << err;
 }
 
+/*
 template <typename T>
 void ChatServer::youtube_doApi(const QString &endpoint, const QString &access_token, const QString &refresh_token, T slot)
 {
@@ -1134,8 +1175,10 @@ void ChatServer::youtube_doApi(const QString &endpoint, const QString &access_to
 }
 
 template <typename T>
-void ChatServer::youtube_lookupUser(QWebSocket *client, const QString &auth_code, T success)
+void ChatServer::youtube_lookupUser(const MessageData &msg, const QString &auth_code, T success)
 {
+  QWebSocket *client = msg.client;
+
   {
     // See if we can find the user ID from the auth code alone
     QSqlQuery tokenLookup(m_db);
@@ -1153,7 +1196,7 @@ void ChatServer::youtube_lookupUser(QWebSocket *client, const QString &auth_code
       // Found user ID, return it here
       qint64 userId = tokenLookup.value(QStringLiteral("user_id")).toLongLong();
       insertSocket(userId, client);
-      success(userId);
+      (this->*success)(msg, userId);
       return;
     }
   }
@@ -1171,7 +1214,9 @@ void ChatServer::youtube_lookupUser(QWebSocket *client, const QString &auth_code
   postData.addQueryItem(QStringLiteral("grant_type"), QStringLiteral("authorization_code"));
 
   QNetworkReply *reply = m_netMan->post(req, postData.toString(QUrl::FullyEncoded).toUtf8());
-  connect(reply, &QNetworkReply::finished, this, [this, reply, client, auth_code, success]{
+  connect(reply, &QNetworkReply::finished, this, [this, reply, msg, auth_code, success]{
+    QWebSocket *client = msg.client;
+
     if (reply->error() != QNetworkReply::NoError) {
       sendUserStatusMessage(client, STATUS_UNAUTHENTICATED);
       return;
@@ -1185,7 +1230,8 @@ void ChatServer::youtube_lookupUser(QWebSocket *client, const QString &auth_code
     qint64 expire_time = QDateTime::currentSecsSinceEpoch() + json.object().value(QStringLiteral("expires_in")).toInt();
 
     youtube_doApi(QStringLiteral("/channels?part=snippet&mine=true"), access_token, refresh_token,
-                 [this, client, auth_code, access_token, refresh_token, expire_time, success]{
+                 [this, msg, auth_code, access_token, refresh_token, expire_time, success]{
+      QWebSocket *client = msg.client;
       QNetworkReply *reply = static_cast<QNetworkReply*>(sender());
       QJsonDocument json = QJsonDocument::fromJson(reply->readAll());
       QJsonArray items = json.object().value(QStringLiteral("items")).toArray();
@@ -1219,30 +1265,7 @@ void ChatServer::youtube_lookupUser(QWebSocket *client, const QString &auth_code
       }
 
       if (userId == 0) {
-        // Failed to find user ID from channel ID. This must be a new user! Create an account for them...
-        QSqlQuery insertQuery(m_db);
-        insertQuery.prepare(QStringLiteral("INSERT INTO users (display_name_change_time, last_message, last_message_time, banned_at, banned_until, auth_level) VALUES (?, ?, ?, ?, ?, ?); SELECT LAST_INSERT_ID();"));
-
-        insertQuery.addBindValue(0);
-        insertQuery.addBindValue(QLatin1String(""));
-        insertQuery.addBindValue(0);
-        insertQuery.addBindValue(0);
-        insertQuery.addBindValue(0);
-        insertQuery.addBindValue(Request::AUTH_USER);
-
-        if (!insertQuery.exec()) {
-          qCritical() << "Failed to insert user auth into table:" << insertQuery.lastError();
-          return;
-        }
-
-        insertQuery.nextResult();
-
-        if (insertQuery.next()) {
-          userId = insertQuery.value(0).toLongLong();
-        } else {
-          qCritical() << "Failed to retrieve new user ID for user";
-          return;
-        }
+        userId = createNewUser();
       }
 
       if (userId != 0) {
@@ -1277,17 +1300,18 @@ void ChatServer::youtube_lookupUser(QWebSocket *client, const QString &auth_code
           return;
         }
 
-        success(userId);
+        (this->*success)(msg, userId);
       } else {
         sendUserState(client, STATUS_UNAUTHENTICATED);
       }
     });
   });
 }
+*/
 
 void ChatServer::insertSimpleResponse(const QString &command, const QString &response)
 {
-  insertCommand(command, &ChatServer::commandSimpleResponse, Request::AUTH_USER);
+  insertCommand(command, &ChatServer::commandSimpleResponse, Authorization::AUTH_USER);
   m_simpleResponses.insert(command, response);
 }
 

@@ -19,6 +19,7 @@
 #include <QWebSocket>
 #include <QWebSocketServer>
 
+#include "auth/authmodule.h"
 #include "overlaymessage.h"
 #include "startupconfig.h"
 #include "usersocketmap.h"
@@ -31,13 +32,6 @@ public:
   class Request
   {
   public:
-    enum Authorization {
-      AUTH_USER = 0,
-      AUTH_MEMBER = 20,
-      AUTH_MOD = 50,
-      AUTH_ADMIN = 100
-    };
-
     Request(const QString &line, const QString &author, qint64 authorId, Authorization auth)
     {
       m_line = line;
@@ -58,7 +52,7 @@ public:
     }
 
     Request(const QString &line) :
-      Request(line, QString(), 0, AUTH_ADMIN)
+      Request(line, QString(), 0, Authorization::AUTH_ADMIN)
     {}
 
     Request() : Request(QString()){}
@@ -146,14 +140,14 @@ protected:
 
   typedef Response(ChatServer::*CommandHandler_t)(const Request &r);
 
-  void insertCommand(const QString &command, CommandHandler_t handler, Request::Authorization minimumAuth)
+  void insertCommand(const QString &command, CommandHandler_t handler, Authorization minimumAuth)
   {
     m_commandMap.insert(command, {handler, minimumAuth});
   }
 
   void insertSimpleResponse(const QString &command, const QString &response);
 
-  void publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Request::Authorization auth);
+  void publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Authorization auth);
 
   Response doMention(const Request &r);
 
@@ -161,7 +155,7 @@ private:
   struct CommandHandler
   {
     CommandHandler_t handler;
-    Request::Authorization authorization;
+    Authorization authorization;
   };
 
   void initCommands();
@@ -189,11 +183,16 @@ private:
   Response commandUnmod(const Request &r);
   Response commandDelMsg(const Request &r);
   Response commandVideo(const Request &r);
+  Response commandInfo(const Request &r);
+  Response commandFollowMode(const Request &r);
 
   Status getUserStateFromID(qint64 id);
   static QString getStatusString(Status s);
 
   static QJsonDocument generateClientPacket(const QString &type, const QJsonObject &data);
+
+  void processAuthenticatedMessage(QWebSocket *client, const QString &type, const QJsonValue &data, qint64 authorId);
+  void handleAuthFailure(QWebSocket *client);
 
   void sendUserStatusMessage(QWebSocket *skt, const Status &status);
   void sendServerMessage(QWebSocket *skt, const QString &status);
@@ -210,26 +209,24 @@ private:
 
   Response ban(const Request &r, bool andIP);
 
-  Response setUserAuthLevelCommand(const Request &r, Request::Authorization auth);
+  Response setUserAuthLevelCommand(const Request &r, Authorization auth);
   void loadResponses();
 
   bool isMessageAcceptable(const QString &msg);
 
-  template <typename T>
-  void youtube_lookupUser(QWebSocket *client, const QString &auth_code, T success);
-
-  template <typename T>
-  void youtube_doApi(const QString &endpoint, const QString &access_token, const QString &refresh_token, T slot);
+  qint64 createNewUser();
 
   static QString stripAtSymbols(QString name);
 
-  static QJsonDocument generateChatMessageForClient(qint64 msgId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Request::Authorization auth);
+  static QJsonDocument generateChatMessageForClient(qint64 msgId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth);
 
   void insertSocket(qint64 author, QWebSocket *skt);
   void removeSocket(QWebSocket *skt);
 
   QJsonDocument generateJoinPacket(const QString &name);
-  QJsonDocument generateAuthLevelPacket(Request::Authorization auth);
+  QJsonDocument generateAuthLevelPacket(Authorization auth);
+
+  AuthModule *getAuthModuleById(const QString &id) const;
 
   QMap<QString, CommandHandler> m_commandMap;
   QMap<QString, QString> m_simpleResponses;
@@ -240,12 +237,15 @@ private:
   quint64 m_slowMode;
   quint64 m_duplicateSlowMode;
   quint64 m_displayNameChangeTime;
+  quint64 m_followMode;
 
   QSqlDatabase m_db;
 
   UserSocketMap m_clients;
 
   QNetworkAccessManager *m_netMan;
+
+  QVector<AuthModule*> m_authModules;
 
 private slots:
   void handleNewConnection();

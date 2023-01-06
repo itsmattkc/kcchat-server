@@ -2,35 +2,37 @@
 
 void ChatServer::initCommands()
 {
-  insertCommand(QStringLiteral("addcom"), &ChatServer::commandAddCom, Request::AUTH_MOD);
-  insertCommand(QStringLiteral("alert"), &ChatServer::commandAlert, Request::AUTH_MOD);
-  insertCommand(QStringLiteral("editcom"), &ChatServer::commandEditCom, Request::AUTH_MOD);
-  insertCommand(QStringLiteral("delcom"), &ChatServer::commandDelCom, Request::AUTH_MOD);
-  insertCommand(QStringLiteral("commands"), &ChatServer::commandHelp, Request::AUTH_USER);
-  insertCommand(QStringLiteral("help"), &ChatServer::commandHelp, Request::AUTH_USER);
-  insertCommand(QStringLiteral("autotts"), &ChatServer::commandAutoTTS, Request::AUTH_MOD);
-  insertCommand(QStringLiteral("nexttts"), &ChatServer::commandNextTTS, Request::AUTH_MOD);
-  insertCommand(QStringLiteral("pausetts"), &ChatServer::commandPauseTTS, Request::AUTH_MOD);
-  insertCommand(QStringLiteral("purgetts"), &ChatServer::commandPurgeTTS, Request::AUTH_MOD);
-  insertCommand(QStringLiteral("say"), &ChatServer::commandSay, Request::AUTH_MOD);
-  //insertCommand(QStringLiteral("shoutout"), &ChatServer::commandShoutout, Request::AUTH_USER);
-  insertCommand(QStringLiteral("skiptts"), &ChatServer::commandSkipTTS, Request::AUTH_MOD);
-  //insertCommand(QStringLiteral("so"), &ChatServer::commandShoutout, Request::AUTH_USER);
-  insertCommand(QStringLiteral("time"), &ChatServer::commandTime, Request::AUTH_USER);
-  insertCommand(QStringLiteral("timer"), &ChatServer::commandTimer, Request::AUTH_USER);
+  insertCommand(QStringLiteral("addcom"), &ChatServer::commandAddCom, Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("alert"), &ChatServer::commandAlert, Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("editcom"), &ChatServer::commandEditCom, Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("delcom"), &ChatServer::commandDelCom, Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("commands"), &ChatServer::commandHelp, Authorization::AUTH_USER);
+  insertCommand(QStringLiteral("help"), &ChatServer::commandHelp, Authorization::AUTH_USER);
+  insertCommand(QStringLiteral("autotts"), &ChatServer::commandAutoTTS, Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("nexttts"), &ChatServer::commandNextTTS, Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("pausetts"), &ChatServer::commandPauseTTS, Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("purgetts"), &ChatServer::commandPurgeTTS, Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("say"), &ChatServer::commandSay, Authorization::AUTH_MOD);
+  //insertCommand(QStringLiteral("shoutout"), &ChatServer::commandShoutout, Authorization::AUTH_USER);
+  insertCommand(QStringLiteral("skiptts"), &ChatServer::commandSkipTTS, Authorization::AUTH_MOD);
+  //insertCommand(QStringLiteral("so"), &ChatServer::commandShoutout, Authorization::AUTH_USER);
+  insertCommand(QStringLiteral("time"), &ChatServer::commandTime, Authorization::AUTH_USER);
+  insertCommand(QStringLiteral("timer"), &ChatServer::commandTimer, Authorization::AUTH_USER);
+  insertCommand(QStringLiteral("info"), &ChatServer::commandInfo, Authorization::AUTH_USER);
+  insertCommand(QStringLiteral("followmode"), &ChatServer::commandFollowMode, Authorization::AUTH_MOD);
 
-  insertCommand(QStringLiteral("ban"), static_cast<CommandHandler_t>(&ChatServer::commandBan), Request::AUTH_MOD);
-  insertCommand(QStringLiteral("unban"), static_cast<CommandHandler_t>(&ChatServer::commandUnban), Request::AUTH_MOD);
-  insertCommand(QStringLiteral("ipban"), static_cast<CommandHandler_t>(&ChatServer::commandIpBan), Request::AUTH_MOD);
-  insertCommand(QStringLiteral("ip"), static_cast<CommandHandler_t>(&ChatServer::commandIpBan), Request::AUTH_MOD);
-  insertCommand(QStringLiteral("slowmode"), static_cast<CommandHandler_t>(&ChatServer::commandSlowMode), Request::AUTH_MOD);
-  insertCommand(QStringLiteral("slow"), static_cast<CommandHandler_t>(&ChatServer::commandSlowMode), Request::AUTH_MOD);
-  insertCommand(QStringLiteral("mod"), static_cast<CommandHandler_t>(&ChatServer::commandMod), Request::AUTH_ADMIN);
-  insertCommand(QStringLiteral("unmod"), static_cast<CommandHandler_t>(&ChatServer::commandUnmod), Request::AUTH_ADMIN);
-  insertCommand(QStringLiteral("delete"), static_cast<CommandHandler_t>(&ChatServer::commandDelMsg), Request::AUTH_MOD);
-  insertCommand(QStringLiteral("del"), static_cast<CommandHandler_t>(&ChatServer::commandDelMsg), Request::AUTH_MOD);
-  insertCommand(QStringLiteral("rm"), static_cast<CommandHandler_t>(&ChatServer::commandDelMsg), Request::AUTH_MOD);
-  insertCommand(QStringLiteral("video"), static_cast<CommandHandler_t>(&ChatServer::commandVideo), Request::AUTH_ADMIN);
+  insertCommand(QStringLiteral("ban"), static_cast<CommandHandler_t>(&ChatServer::commandBan), Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("unban"), static_cast<CommandHandler_t>(&ChatServer::commandUnban), Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("ipban"), static_cast<CommandHandler_t>(&ChatServer::commandIpBan), Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("ip"), static_cast<CommandHandler_t>(&ChatServer::commandIpBan), Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("slowmode"), static_cast<CommandHandler_t>(&ChatServer::commandSlowMode), Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("slow"), static_cast<CommandHandler_t>(&ChatServer::commandSlowMode), Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("mod"), static_cast<CommandHandler_t>(&ChatServer::commandMod), Authorization::AUTH_ADMIN);
+  insertCommand(QStringLiteral("unmod"), static_cast<CommandHandler_t>(&ChatServer::commandUnmod), Authorization::AUTH_ADMIN);
+  insertCommand(QStringLiteral("delete"), static_cast<CommandHandler_t>(&ChatServer::commandDelMsg), Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("del"), static_cast<CommandHandler_t>(&ChatServer::commandDelMsg), Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("rm"), static_cast<CommandHandler_t>(&ChatServer::commandDelMsg), Authorization::AUTH_MOD);
+  insertCommand(QStringLiteral("video"), static_cast<CommandHandler_t>(&ChatServer::commandVideo), Authorization::AUTH_ADMIN);
 }
 
 ChatServer::Response ChatServer::commandAddCom(const Request &r)
@@ -43,7 +45,7 @@ ChatServer::Response ChatServer::commandAddCom(const Request &r)
     } else {
       QString response = r.args().mid(2).join(' ');
       m_simpleResponses.insert(newcom, response);
-      insertCommand(newcom, &ChatServer::commandSimpleResponse, Request::AUTH_USER);
+      insertCommand(newcom, &ChatServer::commandSimpleResponse, Authorization::AUTH_USER);
 
       // Add to database
       QSqlQuery q(m_db);
@@ -101,7 +103,7 @@ ChatServer::Response ChatServer::doMention(const Request &r)
   }
 
   if (isGreeting) {
-    if (r.authorization() >= Request::AUTH_MEMBER) {
+    if (r.authorization() >= Authorization::AUTH_MEMBER) {
       return Response(r, tr("Hey @%1!").arg(r.author()), true);
     } else {
       return Response(r, tr("I only say hello to subscribers"), true);
@@ -374,12 +376,12 @@ ChatServer::Response ChatServer::commandSlowMode(const Request &r)
 
 ChatServer::Response ChatServer::commandMod(const Request &r)
 {
-  return setUserAuthLevelCommand(r, Request::AUTH_MOD);
+  return setUserAuthLevelCommand(r, Authorization::AUTH_MOD);
 }
 
 ChatServer::Response ChatServer::commandUnmod(const Request &r)
 {
-  return setUserAuthLevelCommand(r, Request::AUTH_USER);
+  return setUserAuthLevelCommand(r, Authorization::AUTH_USER);
 }
 
 ChatServer::Response ChatServer::commandDelMsg(const Request &r)
@@ -413,5 +415,32 @@ ChatServer::Response ChatServer::commandVideo(const ChatServer::Request &r)
     return Response(r, tr("Video updated to %1 successfully").arg(id));
   } else {
     return Response(r, tr("Usage: %1 <video-id>").arg(r.command()));
+  }
+}
+
+ChatServer::Response ChatServer::commandInfo(const Request &r)
+{
+  return Response(r, tr("Version: %1<br>Slow Mode: %2 seconds<br>Duplicate Slow Mode: %3 seconds<br>Follow Mode: %4 seconds").arg(
+                    QStringLiteral("0.1"),
+                    QString::number(m_slowMode),
+                    QString::number(m_duplicateSlowMode),
+                    QString::number(m_followMode)
+                    ));
+}
+
+ChatServer::Response ChatServer::commandFollowMode(const Request &r)
+{
+  if (r.args().size() == 2) {
+    const QString &s = r.args().at(1);
+    bool ok;
+    int newFollowMode = s.toInt(&ok);
+    if (ok) {
+      m_followMode = newFollowMode;
+      return Response(r, tr("Follow mode set to %1 seconds").arg(m_followMode));
+    } else {
+      return Response(r, tr("Failed to parse seconds '%1'").arg(s));
+    }
+  } else {
+    return Response(r, tr("Usage: %1 <seconds>").arg(r.command()));
   }
 }
