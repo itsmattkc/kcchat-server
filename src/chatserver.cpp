@@ -561,6 +561,8 @@ void ChatServer::clientDisconnected()
 
 void ChatServer::processAuthenticatedMessage(QWebSocket *client, const QString &type, const QJsonValue &data, qint64 id)
 {
+  insertSocket(id, client);
+
   if (type == QStringLiteral("status")) {
     sendUserState(client, id);
 
