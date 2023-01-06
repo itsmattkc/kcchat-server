@@ -793,7 +793,7 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
 
     // Check if user is allowed to speak yet
     if (m_followMode > 0) {
-      qint64 followDelta = now - createdAt + m_followMode;
+      qint64 followDelta = now - (createdAt + m_followMode);
       if (followDelta < 0) {
         sendServerMessage(client, tr("Your account must be at least %1 seconds old to message here. Please wait another %2 seconds.").arg(QString::number(m_followMode), QString::number(-followDelta)));
         return;
