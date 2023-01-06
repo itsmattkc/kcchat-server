@@ -16,6 +16,8 @@ public:
 private:
   void lookupUserFromSub(QSqlDatabase db, const QString &sub, std::function<void(qint64)> callback, std::function<void()> failure) const;
 
+  void handleNewToken(QSqlDatabase db, const QString &token, const QString &existingRefresh, std::function<void(qint64)> callback, std::function<void()> failure) const;
+
 };
 
 #endif // GOOGLEAUTH_H
