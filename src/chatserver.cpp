@@ -516,9 +516,7 @@ void ChatServer::removeSocket(QWebSocket *skt)
   if (a != 0) {
     UserInfo info;
     if (getUserInfoFromUserId(a, &info) && !info.name.isEmpty()) {
-      QJsonObject d;
-      d.insert(QStringLiteral("name"), info.name);
-      m_clients.broadcastTextMessage(generateClientPacket(QStringLiteral("part"), d).toJson());
+      m_clients.broadcastTextMessage(generatePartPacket(info.name).toJson());
       qDebug() << "Chatter" << info.name << a << "parted";
     }
   }
@@ -529,6 +527,13 @@ QJsonDocument ChatServer::generateJoinPacket(const QString &name)
   QJsonObject d;
   d.insert(QStringLiteral("name"), name);
   return generateClientPacket(QStringLiteral("join"), d);
+}
+
+QJsonDocument ChatServer::generatePartPacket(const QString &name)
+{
+  QJsonObject d;
+  d.insert(QStringLiteral("name"), name);
+  return generateClientPacket(QStringLiteral("part"), d);
 }
 
 QJsonDocument ChatServer::generateAuthLevelPacket(Authorization auth)
@@ -897,7 +902,7 @@ void ChatServer::processSetUserConfig(QWebSocket *client, qint64 id, const QJson
       renameQuery.addBindValue(QDateTime::currentSecsSinceEpoch());
       renameQuery.addBindValue(id);
       if (!renameQuery.exec()) {
-        // SQL error, assume that means the name change would cause a duplicate
+        // SQL error, determine whether it's a "duplicate entry" error or some other error
         QSqlError err = renameQuery.lastError();
         if (err.nativeErrorCode() == QStringLiteral("1062")) {
           // Duplicate entry, let client know
@@ -908,6 +913,12 @@ void ChatServer::processSetUserConfig(QWebSocket *client, qint64 id, const QJson
         }
         return;
       }
+
+      // If we're here, username changed successfully. Let all clients know.
+      if (!oldName.isEmpty()) {
+        m_clients.broadcastTextMessage(generatePartPacket(oldName).toJson());
+      }
+      m_clients.broadcastTextMessage(generateJoinPacket(newName).toJson());
     }
   }
 

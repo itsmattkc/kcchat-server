@@ -235,6 +235,7 @@ private:
   void removeSocket(QWebSocket *skt);
 
   QJsonDocument generateJoinPacket(const QString &name);
+  QJsonDocument generatePartPacket(const QString &name);
   QJsonDocument generateAuthLevelPacket(Authorization auth);
 
   AuthModule *getAuthModuleById(const QString &id) const;
