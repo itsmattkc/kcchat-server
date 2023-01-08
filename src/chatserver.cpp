@@ -149,7 +149,7 @@ QString ChatServer::getStatusString(Status s)
   return QString();
 }
 
-void ChatServer::publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Authorization auth)
+void ChatServer::publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Authorization auth, const QString &donateValue)
 {
   // Trim string and check for empty. Client will have done this, but we can't trust it.
   msg = msg.replace(QRegExp(QStringLiteral("["
@@ -170,12 +170,13 @@ void ChatServer::publish(const QString &author, qint64 id, QString msg, const QS
   bool dropped = !isMessageAcceptable(msg);
 
   QSqlQuery insertQuery(m_db);
-  insertQuery.prepare(QStringLiteral("INSERT INTO history (user_id, time, message, dropped, host) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID();"));
+  insertQuery.prepare(QStringLiteral("INSERT INTO history (user_id, time, message, dropped, host, donate_value) VALUES (?, ?, ?, ?, ?, ?); SELECT LAST_INSERT_ID();"));
   insertQuery.addBindValue(id);
   insertQuery.addBindValue(QDateTime::currentMSecsSinceEpoch());
   insertQuery.addBindValue(msg);
   insertQuery.addBindValue(dropped);
   insertQuery.addBindValue(ip.toString());
+  insertQuery.addBindValue(donateValue);
   if (!insertQuery.exec()) {
     qCritical() << "Failed to insert chat message into history:" << insertQuery.lastError();
   }
@@ -188,7 +189,7 @@ void ChatServer::publish(const QString &author, qint64 id, QString msg, const QS
   insertQuery.next();
   qint64 msgId = insertQuery.value(0).toLongLong();
 
-  m_clients.broadcastTextMessage(generateChatMessageForClient(msgId, author, id, color, msg, auth).toJson());
+  m_clients.broadcastTextMessage(generateChatMessageForClient(msgId, author, id, color, msg, auth, donateValue).toJson());
 }
 
 QJsonDocument ChatServer::generateClientPacket(const QString &type, const QJsonObject &data)
@@ -218,22 +219,29 @@ void ChatServer::sendUserState(QWebSocket *skt, qint64 id)
   sendUserStatusMessage(skt, getUserStateFromID(id));
 }
 
-QString ChatServer::getDisplayNameFromUserId(qint64 id)
+bool ChatServer::getUserInfoFromUserId(qint64 id, UserInfo *out)
 {
-  QSqlQuery nameQuery(m_db);
-  nameQuery.prepare(QStringLiteral("SELECT display_name FROM users WHERE id = ?"));
-  nameQuery.addBindValue(id);
-  if (!nameQuery.exec()) {
-    qCritical() << "Failed to get display name for join broadcast:" << nameQuery.lastError();
-    return QString();
+  QSqlQuery userLookupQuery(m_db);
+  userLookupQuery.prepare(QStringLiteral("SELECT * FROM users WHERE id = ?"));
+  userLookupQuery.addBindValue(id);
+  if (!userLookupQuery.exec()) {
+    qCritical() << "Failed to look up user information:" << userLookupQuery.lastError();
+    return false;
   }
 
-  if (!nameQuery.next()) {
-    qCritical() << "Failed to find display name for ID for join broadcast";
-    return QString();
+  if (!userLookupQuery.next()) {
+    return false;
   }
 
-  return nameQuery.value(QStringLiteral("display_name")).toString();
+  out->name = userLookupQuery.value(QStringLiteral("display_name")).toString();
+  out->lastMessage = userLookupQuery.value(QStringLiteral("last_message")).toString();
+  out->lastMessageTime = userLookupQuery.value(QStringLiteral("last_message_time")).toLongLong();
+  out->bannedUntil = userLookupQuery.value(QStringLiteral("banned_until")).toLongLong();
+  out->auth = static_cast<Authorization>(userLookupQuery.value(QStringLiteral("auth_level")).toInt());
+  out->color = userLookupQuery.value(QStringLiteral("display_color")).toString();
+  out->createdAt = userLookupQuery.value(QStringLiteral("created_at")).toLongLong();
+
+  return true;
 }
 
 void ChatServer::dropMessages(const QVector<qint64> &msgIds, bool updateDb)
@@ -471,7 +479,7 @@ QString ChatServer::stripAtSymbols(QString name)
   return name;
 }
 
-QJsonDocument ChatServer::generateChatMessageForClient(qint64 msgId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth)
+QJsonDocument ChatServer::generateChatMessageForClient(qint64 msgId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth, const QString &donateValue)
 {
   // Escape HTML
   msg = msg.toHtmlEscaped();
@@ -485,6 +493,7 @@ QJsonDocument ChatServer::generateChatMessageForClient(qint64 msgId, const QStri
   data.insert(QStringLiteral("author_level"), int(auth));
   data.insert(QStringLiteral("message"), msg);
   data.insert(QStringLiteral("auth"), int(auth));
+  data.insert(QStringLiteral("donate_value"), donateValue);
 
   return generateClientPacket(QStringLiteral("chat"), data);
 }
@@ -493,10 +502,10 @@ void ChatServer::insertSocket(qint64 author, QWebSocket *skt)
 {
   bool just_joined = m_clients.insertSocket(author, skt);
   if (just_joined) {
-    QString name = getDisplayNameFromUserId(author);
-    if (!name.isEmpty()) {
-      m_clients.broadcastTextMessage(generateJoinPacket(name).toJson());
-      qDebug() << "Chatter" << name << author << "joined";
+    UserInfo info;
+    if (getUserInfoFromUserId(author, &info) && !info.name.isEmpty()) {
+      m_clients.broadcastTextMessage(generateJoinPacket(info.name).toJson());
+      qDebug() << "Chatter" << info.name << author << "joined";
     }
   }
 }
@@ -505,12 +514,12 @@ void ChatServer::removeSocket(QWebSocket *skt)
 {
   qint64 a = m_clients.removeSocket(skt);
   if (a != 0) {
-    QString name = getDisplayNameFromUserId(a);
-    if (!name.isEmpty()) {
+    UserInfo info;
+    if (getUserInfoFromUserId(a, &info) && !info.name.isEmpty()) {
       QJsonObject d;
-      d.insert(QStringLiteral("name"), name);
+      d.insert(QStringLiteral("name"), info.name);
       m_clients.broadcastTextMessage(generateClientPacket(QStringLiteral("part"), d).toJson());
-      qDebug() << "Chatter" << name << a << "parted";
+      qDebug() << "Chatter" << info.name << a << "parted";
     }
   }
 }
@@ -586,7 +595,7 @@ void ChatServer::processAuthenticatedMessage(QWebSocket *client, const QString &
   } else if (type == QStringLiteral("message")) {
     processChatMessage(client, id, data);
   } else if (type == QStringLiteral("paypal")) {
-    processPayPal(id, data);
+    processPayPal(client, id, data);
   }
 }
 
@@ -680,51 +689,31 @@ void ChatServer::processClientMessage(const QString &s)
 
 void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const QJsonValue &data)
 {
-  QString author, lastMessage, color;
-  qint64 lastMessageTime, bannedUntil, createdAt;
-  Authorization auth = Authorization::AUTH_USER;
+  UserInfo info;
 
   // Using the user ID, try loading the user's details
-  {
-    QSqlQuery userLookupQuery(m_db);
-    userLookupQuery.prepare(QStringLiteral("SELECT * FROM users WHERE id = ?"));
-    userLookupQuery.addBindValue(authorId);
-    if (!userLookupQuery.exec()) {
-      qCritical() << "Failed to look up user information:" << userLookupQuery.lastError();
-      return;
-    }
-
-    if (!userLookupQuery.next()) {
-      sendUserStatusMessage(client, STATUS_UNAUTHENTICATED);
-      return;
-    }
-
-    author = userLookupQuery.value(QStringLiteral("display_name")).toString();
-    lastMessage = userLookupQuery.value(QStringLiteral("last_message")).toString();
-    lastMessageTime = userLookupQuery.value(QStringLiteral("last_message_time")).toLongLong();
-    bannedUntil = userLookupQuery.value(QStringLiteral("banned_until")).toLongLong();
-    auth = static_cast<Authorization>(userLookupQuery.value(QStringLiteral("auth_level")).toInt());
-    color = userLookupQuery.value(QStringLiteral("display_color")).toString();
-    createdAt = userLookupQuery.value(QStringLiteral("created_at")).toLongLong();
+  if (!getUserInfoFromUserId(authorId, &info)) {
+    sendUserStatusMessage(client, STATUS_UNAUTHENTICATED);
+    return;
   }
 
   // Get time now
   qint64 now = QDateTime::currentSecsSinceEpoch();
 
   // Check if user is banned
-  if (bannedUntil > now) {
+  if (info.bannedUntil > now) {
     sendUserStatusMessage(client, STATUS_BANNED);
     return;
   }
 
-  if (author.isEmpty()) {
+  if (info.name.isEmpty()) {
     sendUserStatusMessage(client, STATUS_RENAME);
     return;
   }
 
   // Check if user has violated slow mode
   if (m_slowMode > 0) {
-    qint64 slowModeDelta = lastMessageTime + m_slowMode - now;
+    qint64 slowModeDelta = info.lastMessageTime + m_slowMode - now;
     if (slowModeDelta > 0) {
       sendServerMessage(client, tr("Chat is in slow mode, please wait %1 seconds to send another message.").arg(slowModeDelta));
       return;
@@ -759,9 +748,9 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
     strippedMsg.remove(0, 1);
 
     // Prevent possible backdoor to admin access
-    if (!author.isEmpty() && authorId != 0) {
-      Request r(strippedMsg, author, authorId, auth);
-      qDebug() << author << "tried to use command" << r.command();
+    if (!info.name.isEmpty() && authorId != 0) {
+      Request r(strippedMsg, info.name, authorId, info.auth);
+      qDebug() << info.name << "tried to use command" << r.command();
 
       if (r.command().isEmpty()) {
         return;
@@ -779,14 +768,14 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
   } else {
     // Handle a mention of the bot
     if (msg.contains(QStringLiteral("@%1").arg(CONFIG[QStringLiteral("bot_name")].toString()), Qt::CaseInsensitive)) {
-      response = doMention(Request(msg, author, authorId, auth));
+      response = doMention(Request(msg, info.name, authorId, info.auth));
     }
   }
 
   if (!response.isValid()) {
     // If this is not a bot message, and it's a duplicate that happened too quickly, reject it
-    if (m_duplicateSlowMode > 0 && msg == lastMessage) {
-      qint64 slowModeDelta = lastMessageTime + m_duplicateSlowMode - now;
+    if (m_duplicateSlowMode > 0 && msg == info.lastMessage) {
+      qint64 slowModeDelta = info.lastMessageTime + m_duplicateSlowMode - now;
       if (slowModeDelta > 0) {
         sendServerMessage(client, tr("Your identical message was sent too quickly, please wait %1 seconds to send it again.").arg(slowModeDelta));
         return;
@@ -795,7 +784,7 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
 
     // Check if user is allowed to speak yet
     if (m_followMode > 0) {
-      qint64 followDelta = now - (createdAt + m_followMode);
+      qint64 followDelta = now - (info.createdAt + m_followMode);
       if (followDelta < 0) {
         sendServerMessage(client, tr("Your account must be at least %1 seconds old to message here. Please wait another %2 seconds.").arg(QString::number(m_followMode), QString::number(-followDelta)));
         return;
@@ -804,7 +793,7 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
   }
 
   if (!response.isValid() || response.isPublic()) {
-    publish(author, authorId, msg, color, ip, auth);
+    publish(info.name, authorId, msg, info.color, ip, info.auth);
   }
 
   if (response.isValid()) {
@@ -939,7 +928,7 @@ void ChatServer::processHello(QWebSocket *client, const QJsonValue &data)
   QJsonObject o = data.toObject();
 
   QSqlQuery historyQuery(m_db);
-  historyQuery.prepare(QStringLiteral("SELECT id, user_id, message FROM history WHERE dropped = 0 AND id > ? ORDER BY time DESC LIMIT ?"));
+  historyQuery.prepare(QStringLiteral("SELECT id, user_id, message, donate_value FROM history WHERE dropped = 0 AND id > ? ORDER BY time DESC LIMIT ?"));
   historyQuery.addBindValue(o.value(QStringLiteral("last_message")).toInt());
   historyQuery.addBindValue(HISTORY_LENGTH);
   if (!historyQuery.exec()) {
@@ -954,6 +943,7 @@ void ChatServer::processHello(QWebSocket *client, const QJsonValue &data)
     QString message;
     qint64 messageId;
     Authorization auth;
+    QString donateValue;
   };
 
   std::list<Msg> msgs;
@@ -986,29 +976,30 @@ void ChatServer::processHello(QWebSocket *client, const QJsonValue &data)
 
     m.messageId = historyQuery.value(QStringLiteral("id")).toLongLong();
     m.message = historyQuery.value(QStringLiteral("message")).toString();
+    m.donateValue = historyQuery.value(QStringLiteral("donate_value")).toString();
 
     msgs.push_back(m);
   }
 
   while (!msgs.empty()) {
     const Msg &m = msgs.back();
-    client->sendTextMessage(generateChatMessageForClient(m.messageId, m.author, m.authorId, m.authorColor, m.message, m.auth).toJson());
+    client->sendTextMessage(generateChatMessageForClient(m.messageId, m.author, m.authorId, m.authorColor, m.message, m.auth, m.donateValue).toJson());
     msgs.pop_back();
   }
 
   const QList<qint64> activeUsers = m_clients.authors();
   client->sendTextMessage(generateJoinPacket(CONFIG[QStringLiteral("bot_name")].toString()).toJson());
   for (qint64 a : activeUsers) {
-    QString name = getDisplayNameFromUserId(a);
-    if (!name.isEmpty()) {
-      client->sendTextMessage(generateJoinPacket(name).toJson());
+    UserInfo info;
+    if (getUserInfoFromUserId(a, &info) && !info.name.isEmpty()) {
+      client->sendTextMessage(generateJoinPacket(info.name).toJson());
     }
   }
 
   insertSocket(0, client);
 }
 
-void ChatServer::processPayPal(qint64 id, const QJsonValue &data)
+void ChatServer::processPayPal(QWebSocket *client, qint64 id, const QJsonValue &data)
 {
   static QByteArray PP_ACCESS_TOKEN;
 
@@ -1021,9 +1012,22 @@ void ChatServer::processPayPal(qint64 id, const QJsonValue &data)
     }
   }
 
-  QString name = getDisplayNameFromUserId(id);
+  UserInfo info;
+  if (!getUserInfoFromUserId(id, &info)) {
+    return;
+  }
 
-  qDebug() << "User" << name << "made donation";
+  if (info.bannedUntil > QDateTime::currentSecsSinceEpoch()) {
+    qInfo() << "Banned user" << info.name << "attempted to make a donation";
+    return;
+  }
+
+  if (info.name.isEmpty()) {
+    qInfo() << "User with no name attempted to make a donation";
+    return;
+  }
+
+  qDebug() << "User" << info.name << "made donation";
 
   QJsonObject o = data.toObject();
 
@@ -1042,7 +1046,7 @@ void ChatServer::processPayPal(qint64 id, const QJsonValue &data)
   req.setRawHeader(QByteArrayLiteral("Authorization"), QByteArrayLiteral("Bearer ").append(PP_ACCESS_TOKEN));
 
   auto reply = m_netMan->get(req);
-  connect(reply, &QNetworkReply::finished, this, [this, id, data, name, message, orderId, order]{
+  connect(reply, &QNetworkReply::finished, this, [this, client, id, data, info, message, orderId, order]{
     auto reply = static_cast<QNetworkReply*>(sender());
     auto doc = QJsonDocument::fromJson(reply->readAll());
 
@@ -1063,12 +1067,12 @@ void ChatServer::processPayPal(qint64 id, const QJsonValue &data)
         tokenReq.setRawHeader(QByteArrayLiteral("Authorization"), QByteArrayLiteral("Basic ").append(auth));
 
         QNetworkReply *tokenReply = m_netMan->post(tokenReq, QByteArrayLiteral("grant_type=client_credentials"));
-        connect(tokenReply, &QNetworkReply::finished, this, [this, id, data]{
+        connect(tokenReply, &QNetworkReply::finished, this, [this, client, id, data]{
           auto reply = static_cast<QNetworkReply*>(sender());
           auto json = QJsonDocument::fromJson(reply->readAll());
 
           PP_ACCESS_TOKEN = json.object().value(QStringLiteral("access_token")).toString().toUtf8();
-          processPayPal(id, data);
+          processPayPal(client, id, data);
         });
       } else {
         // Handle unknown error
@@ -1078,6 +1082,7 @@ void ChatServer::processPayPal(qint64 id, const QJsonValue &data)
     }
 
     auto o = doc.object();
+    const QString &name = info.name;
 
     {
       QSqlQuery recordQuery(m_db);
@@ -1149,6 +1154,9 @@ void ChatServer::processPayPal(qint64 id, const QJsonValue &data)
     }
 
     emit requestOverlayMessage(OverlayMessage::Alert(tr("%1 donated $%2").arg(name, amountStr), message));
+    if (!message.isEmpty()) {
+      publish(name, id, message, info.color, client->peerAddress(), info.auth, amountStr);
+    }
   });
 }
 

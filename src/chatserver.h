@@ -147,7 +147,7 @@ protected:
 
   void insertSimpleResponse(const QString &command, const QString &response);
 
-  void publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Authorization auth);
+  void publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Authorization auth, const QString &donateValue = QString());
 
   Response doMention(const Request &r);
 
@@ -203,7 +203,18 @@ private:
 
   void sendUserState(QWebSocket *skt, qint64 id);
 
-  QString getDisplayNameFromUserId(qint64 id);
+  struct UserInfo
+  {
+    QString name;
+    QString color;
+    QString lastMessage;
+    qint64 lastMessageTime;
+    qint64 bannedUntil;
+    Authorization auth;
+    qint64 createdAt;
+  };
+
+  bool getUserInfoFromUserId(qint64 id, UserInfo *out);
 
   void dropMessages(const QVector<qint64> &msgIds, bool updateDb);
 
@@ -218,7 +229,7 @@ private:
 
   static QString stripAtSymbols(QString name);
 
-  static QJsonDocument generateChatMessageForClient(qint64 msgId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth);
+  static QJsonDocument generateChatMessageForClient(qint64 msgId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth, const QString &donateValue);
 
   void insertSocket(qint64 author, QWebSocket *skt);
   void removeSocket(QWebSocket *skt);
@@ -256,7 +267,7 @@ private slots:
   void processChatMessage(QWebSocket *client, qint64 authorId, const QJsonValue &data);
   void processGetUserConfig(QWebSocket *client, qint64 id);
   void processSetUserConfig(QWebSocket *client, qint64 id, const QJsonValue &data);
-  void processPayPal(qint64 id, const QJsonValue &data);
+  void processPayPal(QWebSocket *client, qint64 id, const QJsonValue &data);
   void processHello(QWebSocket *client, const QJsonValue &data);
 
   void handleSslError(const QList<QSslError> &errs);
