@@ -716,15 +716,6 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
     return;
   }
 
-  // Check if user has violated slow mode
-  if (m_slowMode > 0) {
-    qint64 slowModeDelta = info.lastMessageTime + m_slowMode - now;
-    if (slowModeDelta > 0) {
-      sendServerMessage(client, tr("Chat is in slow mode, please wait %1 seconds to send another message.").arg(slowModeDelta));
-      return;
-    }
-  }
-
   QString msg = data.toString().trimmed();
   if (msg.isEmpty()) {
     // Ignore empty message
@@ -777,7 +768,16 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
     }
   }
 
-  if (!response.isValid()) {
+  if (!response.isValid() || response.isPublic()) {
+    // Check if user has violated slow mode
+    if (m_slowMode > 0) {
+      qint64 slowModeDelta = info.lastMessageTime + m_slowMode - now;
+      if (slowModeDelta > 0) {
+        sendServerMessage(client, tr("Chat is in slow mode, please wait %1 seconds to send another message.").arg(slowModeDelta));
+        return;
+      }
+    }
+
     // If this is not a bot message, and it's a duplicate that happened too quickly, reject it
     if (m_duplicateSlowMode > 0 && msg == info.lastMessage) {
       qint64 slowModeDelta = info.lastMessageTime + m_duplicateSlowMode - now;
