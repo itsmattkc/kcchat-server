@@ -768,7 +768,7 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
     }
   }
 
-  if (!response.isValid() || response.isPublic()) {
+  if (!response.isValid() || response.isPublic() && info.auth < Authorization::AUTH_MOD) {
     // Check if user has violated slow mode
     if (m_slowMode > 0) {
       qint64 slowModeDelta = info.lastMessageTime + m_slowMode - now;
