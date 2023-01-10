@@ -176,7 +176,7 @@ void ChatServer::publish(const QString &author, qint64 id, QString msg, const QS
   insertQuery.addBindValue(msg);
   insertQuery.addBindValue(dropped);
   insertQuery.addBindValue(ip.toString());
-  insertQuery.addBindValue(donateValue);
+  insertQuery.addBindValue(donateValue.isEmpty() ? QStringLiteral("") : donateValue);
   if (!insertQuery.exec()) {
     qCritical() << "Failed to insert chat message into history:" << insertQuery.lastError();
   }
