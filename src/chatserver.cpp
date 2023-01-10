@@ -427,7 +427,7 @@ ChatServer::Response ChatServer::setUserAuthLevelCommand(const Request &r, Autho
       for (auto skt : skts) {
         skt->sendTextMessage(generateAuthLevelPacket(auth).toJson());
       }
-      return Response(r, tr("%1 auth level set to %2 successfully").arg(r.command(), QString::number(int(auth))));
+      return Response(r, tr("%1 auth level set to %2 successfully").arg(userToMod, QString::number(int(auth))));
     }
   } else {
     return Response(r, tr("Usage: %1 <username>").arg(r.command()));
