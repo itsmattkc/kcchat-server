@@ -722,18 +722,6 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
     return;
   }
 
-  // Update client's last message & time
-  {
-    QSqlQuery updateLastMsgQuery(m_db);
-    updateLastMsgQuery.prepare(QStringLiteral("UPDATE users SET last_message = ?, last_message_time = ? WHERE id = ?"));
-    updateLastMsgQuery.addBindValue(msg);
-    updateLastMsgQuery.addBindValue(now);
-    updateLastMsgQuery.addBindValue(authorId);
-    if (!updateLastMsgQuery.exec()) {
-      qCritical() << "Failed to update last message information:" << updateLastMsgQuery.lastError();
-    }
-  }
-
   // Determine if message should be published or absorbed by bot
   const QHostAddress &ip = client->peerAddress();
   Response response;
@@ -768,7 +756,7 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
     }
   }
 
-  if (!response.isValid() || response.isPublic() && info.auth < Authorization::AUTH_MOD) {
+  if ((!response.isValid() || response.isPublic()) && info.auth < Authorization::AUTH_MOD) {
     // Check if user has violated slow mode
     if (m_slowMode > 0) {
       qint64 slowModeDelta = info.lastMessageTime + m_slowMode - now;
@@ -793,6 +781,18 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
       if (followDelta < 0) {
         sendServerMessage(client, tr("Your account must be at least %1 seconds old to message here. Please wait another %2 seconds.").arg(QString::number(m_followMode), QString::number(-followDelta)));
         return;
+      }
+    }
+
+    // Chat is not rate limited, update client's last message & time
+    {
+      QSqlQuery updateLastMsgQuery(m_db);
+      updateLastMsgQuery.prepare(QStringLiteral("UPDATE users SET last_message = ?, last_message_time = ? WHERE id = ?"));
+      updateLastMsgQuery.addBindValue(msg);
+      updateLastMsgQuery.addBindValue(now);
+      updateLastMsgQuery.addBindValue(authorId);
+      if (!updateLastMsgQuery.exec()) {
+        qCritical() << "Failed to update last message information:" << updateLastMsgQuery.lastError();
       }
     }
   }
