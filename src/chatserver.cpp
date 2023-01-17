@@ -1174,8 +1174,8 @@ void ChatServer::processPayPal(QWebSocket *client, qint64 id, const QJsonValue &
 
     QString amountStr = purchaseAmount.value(QStringLiteral("value")).toString();
     double amount = amountStr.toDouble();
-    if (amount < 1.00) {
-      ReportPayPalError(orderId, id, name, tr("amount was less than 1.00 USD"));
+    if (amount < 2.00) {
+      ReportPayPalError(orderId, id, name, tr("amount was less than 2.00 USD"));
       return;
     }
 
