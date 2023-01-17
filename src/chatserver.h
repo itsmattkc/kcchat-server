@@ -229,7 +229,7 @@ private:
 
   static QString stripAtSymbols(QString name);
 
-  static QJsonDocument generateChatMessageForClient(qint64 msgId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth, const QString &donateValue);
+  static QJsonDocument generateChatMessageForClient(qint64 msgId, qint64 time, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth, const QString &donateValue);
 
   void insertSocket(qint64 author, QWebSocket *skt);
   void removeSocket(QWebSocket *skt);
