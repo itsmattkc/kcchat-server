@@ -163,7 +163,7 @@ void ChatServer::publish(const QString &author, qint64 id, QString msg, const QS
                                              "\\x2800\\x3164\\xFEFF\\xFFA0"
                                            "]")), QStringLiteral(" "));
   msg = msg.trimmed();
-  if (msg.isEmpty() || msg.size() > CONFIG[QStringLiteral("max_chat_length")].toInt()) {
+  if (donateValue.isEmpty() && (msg.isEmpty() || msg.size() > CONFIG[QStringLiteral("max_chat_length")].toInt())) {
     return;
   }
 
@@ -1169,9 +1169,7 @@ void ChatServer::processPayPal(QWebSocket *client, qint64 id, const QJsonValue &
     }
 
     emit requestOverlayMessage(OverlayMessage::Alert(tr("%1 donated $%2").arg(name, amountStr), message));
-    if (!message.isEmpty()) {
-      publish(name, id, message, info.color, client->peerAddress(), info.auth, amountStr);
-    }
+    publish(name, id, 0, message, info.color, client->peerAddress(), info.auth, amountStr);
   });
 }
 
