@@ -77,7 +77,7 @@ void ChatServer::reply(const Response &r)
       if (req.hasAuthor()) {
         s.prepend(QStringLiteral("@%1 ").arg(req.author()));
       }
-      publish(CONFIG[QStringLiteral("bot_name")].toString(), 0, s, CONFIG[QStringLiteral("bot_color")].toString(), QHostAddress::LocalHost, Authorization::AUTH_MOD);
+      publish(CONFIG[QStringLiteral("bot_name")].toString(), 0, 0, s, CONFIG[QStringLiteral("bot_color")].toString(), QHostAddress::LocalHost, Authorization::AUTH_MOD);
     } else {
       // Send status message
       const QList<QWebSocket*> skts = m_clients.socketsForAuthor(req.authorId());
@@ -149,7 +149,7 @@ QString ChatServer::getStatusString(Status s)
   return QString();
 }
 
-void ChatServer::publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Authorization auth, const QString &donateValue)
+void ChatServer::publish(const QString &author, qint64 id, qint64 replyId, QString msg, const QString &color, const QHostAddress &ip, Authorization auth, const QString &donateValue)
 {
   // Trim string and check for empty. Client will have done this, but we can't trust it.
   msg = msg.replace(QRegExp(QStringLiteral("["
@@ -171,13 +171,14 @@ void ChatServer::publish(const QString &author, qint64 id, QString msg, const QS
   qint64 now = QDateTime::currentMSecsSinceEpoch();
 
   QSqlQuery insertQuery(m_db);
-  insertQuery.prepare(QStringLiteral("INSERT INTO history (user_id, time, message, dropped, host, donate_value) VALUES (?, ?, ?, ?, ?, ?); SELECT LAST_INSERT_ID();"));
+  insertQuery.prepare(QStringLiteral("INSERT INTO history (user_id, time, message, dropped, host, donate_value, reply_id) VALUES (?, ?, ?, ?, ?, ?, ?); SELECT LAST_INSERT_ID();"));
   insertQuery.addBindValue(id);
   insertQuery.addBindValue(now);
   insertQuery.addBindValue(msg);
   insertQuery.addBindValue(dropped);
   insertQuery.addBindValue(ip.toString());
   insertQuery.addBindValue(donateValue.isEmpty() ? QStringLiteral("") : donateValue);
+  insertQuery.addBindValue(replyId);
   if (!insertQuery.exec()) {
     qCritical() << "Failed to insert chat message into history:" << insertQuery.lastError();
   }
@@ -190,7 +191,7 @@ void ChatServer::publish(const QString &author, qint64 id, QString msg, const QS
   insertQuery.next();
   qint64 msgId = insertQuery.value(0).toLongLong();
 
-  m_clients.broadcastTextMessage(generateChatMessageForClient(msgId, now, author, id, color, msg, auth, donateValue).toJson());
+  m_clients.broadcastTextMessage(generateChatMessageForClient(msgId, now, replyId, author, id, color, msg, auth, donateValue).toJson());
 }
 
 QJsonDocument ChatServer::generateClientPacket(const QString &type, const QJsonObject &data)
@@ -480,7 +481,7 @@ QString ChatServer::stripAtSymbols(QString name)
   return name;
 }
 
-QJsonDocument ChatServer::generateChatMessageForClient(qint64 msgId, qint64 time, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth, const QString &donateValue)
+QJsonDocument ChatServer::generateChatMessageForClient(qint64 msgId, qint64 time, qint64 replyId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth, const QString &donateValue)
 {
   // Escape HTML
   msg = msg.toHtmlEscaped();
@@ -496,6 +497,7 @@ QJsonDocument ChatServer::generateChatMessageForClient(qint64 msgId, qint64 time
   data.insert(QStringLiteral("message"), msg);
   data.insert(QStringLiteral("auth"), int(auth));
   data.insert(QStringLiteral("donate_value"), donateValue);
+  data.insert(QStringLiteral("reply"), replyId);
 
   return generateClientPacket(QStringLiteral("chat"), data);
 }
@@ -718,11 +720,15 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
     return;
   }
 
-  QString msg = data.toString().trimmed();
+  QJsonObject d = data.toObject();
+
+  QString msg = d.value(QStringLiteral("text")).toString().trimmed();
   if (msg.isEmpty()) {
     // Ignore empty message
     return;
   }
+
+  qint64 replyMsg = d.value(QStringLiteral("reply")).toString().toLongLong();
 
   // Determine if message should be published or absorbed by bot
   const QHostAddress &ip = client->peerAddress();
@@ -800,7 +806,7 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
   }
 
   if (!response.isValid() || response.isPublic()) {
-    publish(info.name, authorId, msg, info.color, ip, info.auth);
+    publish(info.name, authorId, replyMsg, msg, info.color, ip, info.auth);
   }
 
   if (response.isValid()) {
@@ -941,7 +947,7 @@ void ChatServer::processHello(QWebSocket *client, const QJsonValue &data)
   QJsonObject o = data.toObject();
 
   QSqlQuery historyQuery(m_db);
-  historyQuery.prepare(QStringLiteral("SELECT id, user_id, message, donate_value, time FROM history WHERE dropped = 0 AND id > ? ORDER BY time DESC LIMIT ?"));
+  historyQuery.prepare(QStringLiteral("SELECT id, user_id, message, donate_value, time, reply_id FROM history WHERE dropped = 0 AND id > ? ORDER BY time DESC LIMIT ?"));
   historyQuery.addBindValue(o.value(QStringLiteral("last_message")).toInt());
   historyQuery.addBindValue(HISTORY_LENGTH);
   if (!historyQuery.exec()) {
@@ -952,6 +958,7 @@ void ChatServer::processHello(QWebSocket *client, const QJsonValue &data)
   {
     QString author;
     qint64 authorId;
+    qint64 replyId;
     QString authorColor;
     QString message;
     qint64 messageId;
@@ -991,6 +998,7 @@ void ChatServer::processHello(QWebSocket *client, const QJsonValue &data)
     m.messageTime = historyQuery.value(QStringLiteral("time")).toLongLong();
     m.messageId = historyQuery.value(QStringLiteral("id")).toLongLong();
     m.message = historyQuery.value(QStringLiteral("message")).toString();
+    m.replyId = historyQuery.value(QStringLiteral("reply_id")).toLongLong();
     m.donateValue = historyQuery.value(QStringLiteral("donate_value")).toString();
 
     msgs.push_back(m);
@@ -998,7 +1006,7 @@ void ChatServer::processHello(QWebSocket *client, const QJsonValue &data)
 
   while (!msgs.empty()) {
     const Msg &m = msgs.back();
-    client->sendTextMessage(generateChatMessageForClient(m.messageId, m.messageTime, m.author, m.authorId, m.authorColor, m.message, m.auth, m.donateValue).toJson());
+    client->sendTextMessage(generateChatMessageForClient(m.messageId, m.messageTime, m.replyId, m.author, m.authorId, m.authorColor, m.message, m.auth, m.donateValue).toJson());
     msgs.pop_back();
   }
 

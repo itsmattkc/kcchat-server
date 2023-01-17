@@ -147,7 +147,7 @@ protected:
 
   void insertSimpleResponse(const QString &command, const QString &response);
 
-  void publish(const QString &author, qint64 id, QString msg, const QString &color, const QHostAddress &ip, Authorization auth, const QString &donateValue = QString());
+  void publish(const QString &author, qint64 id, qint64 replyId, QString msg, const QString &color, const QHostAddress &ip, Authorization auth, const QString &donateValue = QString());
 
   Response doMention(const Request &r);
 
@@ -229,7 +229,7 @@ private:
 
   static QString stripAtSymbols(QString name);
 
-  static QJsonDocument generateChatMessageForClient(qint64 msgId, qint64 time, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth, const QString &donateValue);
+  static QJsonDocument generateChatMessageForClient(qint64 msgId, qint64 time, qint64 replyId, const QString &author, qint64 authorId, const QString &authorColor, QString msg, Authorization auth, const QString &donateValue);
 
   void insertSocket(qint64 author, QWebSocket *skt);
   void removeSocket(QWebSocket *skt);
