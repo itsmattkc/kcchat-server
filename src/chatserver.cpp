@@ -728,7 +728,7 @@ void ChatServer::processChatMessage(QWebSocket *client, qint64 authorId, const Q
     return;
   }
 
-  qint64 replyMsg = d.value(QStringLiteral("reply")).toString().toLongLong();
+  qint64 replyMsg = d.value(QStringLiteral("reply")).toInt();
 
   // Determine if message should be published or absorbed by bot
   const QHostAddress &ip = client->peerAddress();
