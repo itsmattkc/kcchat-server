@@ -191,6 +191,19 @@ void ChatServer::publish(const QString &author, qint64 id, qint64 replyId, QStri
   insertQuery.next();
   qint64 msgId = insertQuery.value(0).toLongLong();
 
+  if (replyId < 0 || replyId >= msgId) {
+    // Invalid reply ID, this can't be right!
+    replyId = 0;
+
+    QSqlQuery fixReplyIdQuery(m_db);
+    fixReplyIdQuery.prepare(QStringLiteral("UPDATE history SET reply_id = ? WHERE id = ?"));
+    fixReplyIdQuery.addBindValue(replyId);
+    fixReplyIdQuery.addBindValue(msgId);
+    if (!fixReplyIdQuery.exec()) {
+      qCritical() << "Failed to fix malformed reply ID";
+    }
+  }
+
   m_clients.broadcastTextMessage(generateChatMessageForClient(msgId, now, replyId, author, id, color, msg, auth, donateValue).toJson());
 }
 
