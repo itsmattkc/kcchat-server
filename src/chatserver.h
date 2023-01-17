@@ -10,6 +10,7 @@
 #include <QRandomGenerator>
 #include <QSslCertificate>
 #include <QSslKey>
+#include <QTimeZone>
 #include <QtSql/QSqlDatabase>
 #include <QtSql/QSqlError>
 #include <QtSql/QSqlRecord>

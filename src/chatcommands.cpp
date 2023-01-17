@@ -260,7 +260,9 @@ ChatServer::Response ChatServer::commandSkipTTS(const Request &r)
 
 ChatServer::Response ChatServer::commandTime(const Request &r)
 {
-  return Response(r, tr("The time for the streamer is: %1").arg(QDateTime::currentDateTime().toString()), true);
+  QDateTime dt = QDateTime::currentDateTimeUtc();
+  dt = dt.toTimeZone(QTimeZone(CONFIG[QStringLiteral("timezone")].toByteArray()));
+  return Response(r, tr("The time for the streamer is: %1").arg(dt.toString()), true);
 }
 
 ChatServer::Response ChatServer::commandTimer(const Request &r)

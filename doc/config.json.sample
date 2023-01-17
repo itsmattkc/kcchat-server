@@ -13,5 +13,6 @@
   "paypal_client_id":"",
   "paypal_client_secret":"",
   "youtube_client_id":"",
-  "youtube_client_secret":""
+  "youtube_client_secret":"",
+  "timezone":"America/Los_Angeles"
 }
