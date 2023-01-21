@@ -151,8 +151,9 @@ QString ChatServer::getStatusString(Status s)
 
 void ChatServer::publish(const QString &author, qint64 id, qint64 replyId, QString msg, const QString &color, const QHostAddress &ip, Authorization auth, const QString &donateValue)
 {
-  // Trim string and check for empty. Client will have done this, but we can't trust it.
-  msg = msg.replace(QRegExp(QStringLiteral("["
+  // Attempt to prevent spamming "empty characters" - though some of these are used in Unicode for
+  // certain things, so I've disabled it for now
+  /*msg = msg.replace(QRegExp(QStringLiteral("["
                                              "\\xAD\\xA0\\x09\\x34F\\x61C\\x115F"
                                              "\\x1160\\x17B4\\x17B5\\x180E"
                                              "\\x2000-\\x200F"
@@ -161,7 +162,9 @@ void ChatServer::publish(const QString &author, qint64 id, qint64 replyId, QStri
                                              "\\x206A-\\x206F"
                                              "\\x3000"
                                              "\\x2800\\x3164\\xFEFF\\xFFA0"
-                                           "]")), QStringLiteral(" "));
+                                           "]")), QStringLiteral(" "));*/
+
+  // Trim string and check for empty. Client will have done this, but we can't trust it.
   msg = msg.trimmed();
   if (donateValue.isEmpty() && (msg.isEmpty() || msg.size() > CONFIG[QStringLiteral("max_chat_length")].toInt())) {
     return;
