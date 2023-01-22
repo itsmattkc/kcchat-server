@@ -29,11 +29,9 @@ This assumes you already have the server compiled.
 mysql kcchat < initial.sql
 ```
 
-2. Rename or copy `doc/config.json.sample` to `config.json` and place in the same directory as the executable.
+2. Rename or copy `doc/config.json.sample` to `config.json` and place in the same directory as the executable. Open `config.json` in your preferred editor and start configuring it:
 
-### Configuration
-
-All of the following options are set in the `config.json` file you just placed next to the executable. Edit it with your preferred text editor and set the following options:
+### Configuration (config.json)
 
 1. Enter the MySQL/MariaDB details necessary for accessing your database into `db_host`, `db_port`, `db_user`, `db_pass`, and `db_name`.
 
@@ -49,4 +47,4 @@ All of the following options are set in the `config.json` file you just placed n
 
 ## Warning: Unstable
 
-This code is still considered under development. The API/communication protocol is not currently considered stable and may change without warning. A stable release/protocol/API may be released at a later date.
+This code is still under development. The API/communication protocol is not currently considered stable and may change without warning. A stable release/protocol/API may be released at a later date.
