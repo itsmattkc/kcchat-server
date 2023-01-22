@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(kcbot LANGUAGES CXX)
+project(kcchat LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
@@ -14,7 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(QT NAMES Qt5 REQUIRED COMPONENTS Core Network WebSockets Sql)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Network WebSockets Sql)
 
-add_executable(kcbot
+add_executable(kcchat
   src/auth/authlevel.h
   src/auth/authmodule.cpp
   src/auth/authmodule.h
@@ -36,7 +36,7 @@ add_executable(kcbot
   src/util.h
 )
 
-target_link_libraries(kcbot Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::WebSockets Qt${QT_VERSION_MAJOR}::Sql)
+target_link_libraries(kcchat Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::WebSockets Qt${QT_VERSION_MAJOR}::Sql)
 
-install(TARGETS kcbot
+install(TARGETS kcchat
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
