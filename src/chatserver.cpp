@@ -895,7 +895,7 @@ void ChatServer::processSetUserConfig(QWebSocket *client, qint64 id, const QJson
   QString newName = o.value(QStringLiteral("name")).toString().trimmed();
   if (newName != oldName) {
     // Check name length
-    if (newName.size() < 5 || newName.size() > 32) {
+    if (newName.size() < 3 || newName.size() > 32) {
       sendUserStatusMessage(client, STATUS_NAME_LENGTH);
       return;
     }
