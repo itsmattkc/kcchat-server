@@ -625,7 +625,7 @@ void ChatServer::processAuthenticatedMessage(QPointer<QWebSocket> client, const 
   } else if (type == QStringLiteral("message")) {
     processChatMessage(client, id, data);
   } else if (type == QStringLiteral("paypal")) {
-    processPayPal(client, id, data);
+    processPayPal(client->peerAddress(), id, data);
   }
 }
 
@@ -1043,7 +1043,7 @@ void ChatServer::processHello(QWebSocket *client, const QJsonValue &data)
   insertSocket(0, client);
 }
 
-void ChatServer::processPayPal(QWebSocket *client, qint64 id, const QJsonValue &data)
+void ChatServer::processPayPal(const QHostAddress &address, qint64 id, const QJsonValue &data)
 {
   static QByteArray PP_ACCESS_TOKEN;
 
@@ -1090,7 +1090,7 @@ void ChatServer::processPayPal(QWebSocket *client, qint64 id, const QJsonValue &
   req.setRawHeader(QByteArrayLiteral("Authorization"), QByteArrayLiteral("Bearer ").append(PP_ACCESS_TOKEN));
 
   auto reply = m_netMan->get(req);
-  connect(reply, &QNetworkReply::finished, this, [this, client, id, data, info, message, orderId, order]{
+  connect(reply, &QNetworkReply::finished, this, [this, address, id, data, info, message, orderId, order]{
     auto reply = static_cast<QNetworkReply*>(sender());
     auto doc = QJsonDocument::fromJson(reply->readAll());
 
@@ -1111,12 +1111,12 @@ void ChatServer::processPayPal(QWebSocket *client, qint64 id, const QJsonValue &
         tokenReq.setRawHeader(QByteArrayLiteral("Authorization"), QByteArrayLiteral("Basic ").append(auth));
 
         QNetworkReply *tokenReply = m_netMan->post(tokenReq, QByteArrayLiteral("grant_type=client_credentials"));
-        connect(tokenReply, &QNetworkReply::finished, this, [this, client, id, data]{
+        connect(tokenReply, &QNetworkReply::finished, this, [this, address, id, data]{
           auto reply = static_cast<QNetworkReply*>(sender());
           auto json = QJsonDocument::fromJson(reply->readAll());
 
           PP_ACCESS_TOKEN = json.object().value(QStringLiteral("access_token")).toString().toUtf8();
-          processPayPal(client, id, data);
+          processPayPal(address, id, data);
         });
       } else {
         // Handle unknown error
@@ -1198,7 +1198,7 @@ void ChatServer::processPayPal(QWebSocket *client, qint64 id, const QJsonValue &
     }
 
     emit requestOverlayMessage(OverlayMessage::Alert(tr("%1 donated $%2").arg(name, amountStr), message));
-    publish(name, id, 0, message, info.color, client->peerAddress(), info.auth, amountStr);
+    publish(name, id, 0, message, info.color, address, info.auth, amountStr);
   });
 }
 

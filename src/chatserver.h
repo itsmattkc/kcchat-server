@@ -270,7 +270,7 @@ private slots:
   void processChatMessage(QWebSocket *client, qint64 authorId, const QJsonValue &data);
   void processGetUserConfig(QWebSocket *client, qint64 id);
   void processSetUserConfig(QWebSocket *client, qint64 id, const QJsonValue &data);
-  void processPayPal(QWebSocket *client, qint64 id, const QJsonValue &data);
+  void processPayPal(const QHostAddress &address, qint64 id, const QJsonValue &data);
   void processHello(QWebSocket *client, const QJsonValue &data);
 
   void handleSslError(const QList<QSslError> &errs);
