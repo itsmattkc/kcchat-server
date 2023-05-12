@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QObject>
+#include <QPointer>
 #include <QRandomGenerator>
 #include <QSslCertificate>
 #include <QSslKey>
@@ -192,7 +193,7 @@ private:
 
   static QJsonDocument generateClientPacket(const QString &type, const QJsonObject &data);
 
-  void processAuthenticatedMessage(QWebSocket *client, const QString &type, const QJsonValue &data, qint64 authorId);
+  void processAuthenticatedMessage(QPointer<QWebSocket> client, const QString &type, const QJsonValue &data, qint64 authorId);
   void handleAuthFailure(QWebSocket *client);
 
   void sendUserStatusMessage(QWebSocket *skt, const Status &status);

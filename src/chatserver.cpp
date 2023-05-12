@@ -588,13 +588,18 @@ void ChatServer::clientDisconnected()
 
   removeSocket(s);
 
-  // FIXME: Not deleting may be a memory leak, but some event-based functions continue to refer to
-  //        sockets that may get deleted between callbacks.
-  //s->deleteLater();
+  s->deleteLater();
 }
 
-void ChatServer::processAuthenticatedMessage(QWebSocket *client, const QString &type, const QJsonValue &data, qint64 id)
+void ChatServer::processAuthenticatedMessage(QPointer<QWebSocket> client, const QString &type, const QJsonValue &data, qint64 id)
 {
+  // This function may be queued to check for authentication, and there's a chance the client may
+  // have disconnected in that time, leading to a deleted socket. We use QPointer here to check
+  // if that has happened before proceeding.
+  if (!client) {
+    return;
+  }
+
   insertSocket(id, client);
 
   if (type == QStringLiteral("status")) {
