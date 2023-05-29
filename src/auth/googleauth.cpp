@@ -6,7 +6,7 @@
 
 #include "../startupconfig.h"
 
-void GoogleAuth::authenticate(QSqlDatabase db, const QString &token, std::function<void(qint64)> callback, std::function<void ()> failure) const
+void GoogleAuth::authenticate(QSqlDatabase db, const QString &token, const QString &redirect_uri, std::function<void(qint64)> callback, std::function<void ()> failure) const
 {
   // Look up access token in database
   QSqlQuery lookupToken(db);
@@ -22,13 +22,13 @@ void GoogleAuth::authenticate(QSqlDatabase db, const QString &token, std::functi
     qint64 expireTime = lookupToken.value(QStringLiteral("expires_at")).toLongLong();
 
     if (expireTime < QDateTime::currentSecsSinceEpoch()) {
-      handleNewToken(db, token, lookupToken.value(QStringLiteral("refresh_token")).toString(), callback, failure);
+      handleNewToken(db, token, redirect_uri, lookupToken.value(QStringLiteral("refresh_token")).toString(), callback, failure);
     } else {
       lookupUserFromSub(db, lookupToken.value(QStringLiteral("google_id")).toString(), callback, failure);
     }
   } else {
     // We've never seen this token before, try exchanging it for an access token
-    handleNewToken(db, token, QString(), callback, failure);
+    handleNewToken(db, token, redirect_uri, QString(), callback, failure);
   }
 }
 
@@ -72,7 +72,7 @@ void GoogleAuth::lookupUserFromSub(QSqlDatabase db, const QString &sub, std::fun
   }
 }
 
-void GoogleAuth::handleNewToken(QSqlDatabase db, const QString &token, const QString &existingRefresh, std::function<void (qint64)> callback, std::function<void ()> failure) const
+void GoogleAuth::handleNewToken(QSqlDatabase db, const QString &token, const QString &redirect_uri, const QString &existingRefresh, std::function<void (qint64)> callback, std::function<void ()> failure) const
 {
   QNetworkRequest req(QStringLiteral("https://oauth2.googleapis.com/token"));
   req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/x-www-form-urlencoded"));
@@ -89,7 +89,7 @@ void GoogleAuth::handleNewToken(QSqlDatabase db, const QString &token, const QSt
   } else {
     q.addQueryItem(QStringLiteral("code"), token);
     q.addQueryItem(QStringLiteral("grant_type"), QStringLiteral("authorization_code"));
-    q.addQueryItem(QStringLiteral("redirect_uri"), QStringLiteral("https://stream.mattkc.com"));
+    q.addQueryItem(QStringLiteral("redirect_uri"), redirect_uri);
   }
 
   QNetworkReply *reply = netMan()->post(req, q.toString(QUrl::FullyEncoded).toUtf8());

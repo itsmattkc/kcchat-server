@@ -702,6 +702,7 @@ void ChatServer::processClientMessage(const QString &s)
 
   // Ensure token is valid
   QString token = json.object().value(QStringLiteral("token")).toString();
+  QString redirect_uri = json.object().value(QStringLiteral("redirect_uri")).toString();
   QString authType = json.object().value(QStringLiteral("auth")).toString();
   if (token.isEmpty() || authType.isEmpty()) {
     sendUserStatusMessage(client, STATUS_UNAUTHENTICATED);
@@ -709,7 +710,7 @@ void ChatServer::processClientMessage(const QString &s)
   }
 
   if (AuthModule *a = getAuthModuleById(authType)) {
-    a->authenticate(m_db, token, std::bind(&ChatServer::processAuthenticatedMessage, this, client, type, data, std::placeholders::_1), std::bind(&ChatServer::handleAuthFailure, this, client));
+    a->authenticate(m_db, token, redirect_uri, std::bind(&ChatServer::processAuthenticatedMessage, this, client, type, data, std::placeholders::_1), std::bind(&ChatServer::handleAuthFailure, this, client));
   } else {
     // Don't know how to handle this auth service
     sendUserStatusMessage(client, STATUS_UNAUTHENTICATED);

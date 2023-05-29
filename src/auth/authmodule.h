@@ -21,7 +21,7 @@ public:
 
   virtual QString id() const = 0;
 
-  virtual void authenticate(QSqlDatabase db, const QString &token, std::function<void(qint64)> callback, std::function<void()> failure) const = 0;
+  virtual void authenticate(QSqlDatabase db, const QString &token, const QString &redirect_uri, std::function<void(qint64)> callback, std::function<void()> failure) const = 0;
 
   qint64 createNewUser(QSqlDatabase db) const;
 
