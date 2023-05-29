@@ -26,7 +26,7 @@ jobs:
           mkdir build
           cd build
           cmake "$GITHUB_WORKSPACE" -DCMAKE_BUILD_TYPE=Release
-          cmake . --build
+          cmake --build .
 
       - name: Upload Artifact to GitHub
         uses: actions/upload-artifact@v2
