@@ -17,19 +17,16 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v3
 
-      - name: Install dependencies
-        run: |
-          sudo apt -y update
-          sudo apt -y upgrade
-          sudo apt -y install qtbase5-dev libqt5websockets5-dev ninja-build
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
 
       - name: Build
         working-directory: ${{ runner.workspace }}
         run: |
           mkdir build
           cd build
-          cmake "$GITHUB_WORKSPACE" -G Ninja -DCMAKE_BUILD_TYPE=Release
-          ninja
+          cmake "$GITHUB_WORKSPACE" -DCMAKE_BUILD_TYPE=Release
+          cmake . --build
 
       - name: Upload Artifact to GitHub
         uses: actions/upload-artifact@v2
